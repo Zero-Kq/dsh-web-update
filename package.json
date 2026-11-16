@@ -1,0 +1,67 @@
+{
+  "name": "dsh-web-update",
+  "version": "1.0.1",
+  "description": "One-click update for dsh web on Linux: checks npm for a newer @deepseek-ai/dsh, shows a light-green badge beside the account row, installs it and auto-restarts dsh web.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Zero-Kq",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "update",
+    "updater",
+    "self-update",
+    "web"
+  ],
+  "homepage": "https://github.com/Zero-Kq/dsh-web-update#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zero-Kq/dsh-web-update.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Zero-Kq/dsh-web-update/issues"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "host/update.js",
+    "host/restart.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "icon": "./icon.svg",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

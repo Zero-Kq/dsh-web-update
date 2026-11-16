@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH Web Updater",
+    "description": "Checks npm for a newer dsh release at startup and every 24h, shows a light-green update badge beside your account row, and installs + auto-restarts dsh web after one confirmation."
+  }
+}

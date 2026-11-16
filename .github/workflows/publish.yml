@@ -1,0 +1,33 @@
+name: release
+
+# Publish to npm when a version tag is pushed (v1.0.1, v1.1.0, ...).
+# Requires the repository secret NPM_TOKEN (an npm granular access token that
+# may publish the `dsh-web-update` package). Provenance needs a public repo and
+# the id-token permission below.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Pack contents check
+        run: npm pack --dry-run
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

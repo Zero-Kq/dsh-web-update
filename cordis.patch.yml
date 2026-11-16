@@ -1,0 +1,23 @@
+# dsh-web-update bundle patch.
+#
+# One Host row owns the update check, the install command and the auto-restart;
+# its Client half (`./client`) draws the light-green badge beside the account
+# row in the sidebar foot and the confirm dialog.
+#
+# The row has no Config schema, so the values below are read by `index.js` with
+# its own defaults. Every key is optional — delete one to keep the default:
+#
+#   checkIntervalHours: 24         auto-check period while the host keeps running
+#   autoCheckOnStart: true         run one check when the plugin activates
+#   registryUrl: https://registry.npmjs.org
+#   packageName: '@deepseek-ai/dsh'
+#   distTag: latest                npm dist-tag used when the registry is asked
+#   npmCommand: ''                 npm executable; empty = detected next to this dsh install
+#   installArgs: null              full npm argument list template; {target} is replaced.
+#                                  null = ["install","-g","--no-audit","--no-fund","{target}"]
+#   restartTimeoutSeconds: 90      how long the restart helper waits for the new server
+#   allowPrereleaseUpdates: true   prerelease -> prerelease updates count as updates
+- insert:
+    - id: dsh-web-update
+      name: 'dsh-web-update'
+      config: {}
