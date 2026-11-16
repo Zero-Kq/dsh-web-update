@@ -1,13 +1,15 @@
 name: release
 
 # Publish to npm when a version tag is pushed (v1.0.1, v1.1.0, ...).
-# Requires the repository secret NPM_TOKEN (an npm granular access token that
-# may publish the `dsh-web-update` package). Provenance needs a public repo and
-# the id-token permission below.
+#
+# Requires the repository secret NPM_TOKEN (npm granular access token that may
+# publish `dsh-web-update`). Until that secret exists, a tag run exits
+# successfully with a "skipped" message instead of failing red.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,6 +30,13 @@ jobs:
         run: npm pack --dry-run
 
       - name: Publish
-        run: npm publish --provenance --access public
         env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "NPM_TOKEN secret is not configured; skipping npm publish."
+            echo "Add it under Settings -> Secrets and variables -> Actions, then re-run this workflow."
+            exit 0
+          fi
+          npm publish --provenance --access public
