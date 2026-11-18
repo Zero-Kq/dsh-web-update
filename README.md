@@ -36,6 +36,7 @@ One-click updater for **DeepSeek Harness Web** on Linux. It checks npm for a new
 | Installation | `@deepseek-ai/dsh` installed by **npm globally** (package under `<prefix>/lib/node_modules/@deepseek-ai/dsh`) |
 | Runtime | Node.js **>= 22**; `npm` on `PATH` (or set `npmCommand`) |
 | Not supported | the Desktop (Electron) app, source checkouts, `pnpm`/`yarn` installs — the update button reports why instead of guessing |
+| Host composition | a `dsh web` host with the **Connection** service enabled (the trust fence); without it the routes fail closed with 503 |
 
 Tested with `@deepseek-ai/dsh` **0.2.1-rc.2 → 0.2.2-rc.1** on Linux.
 
@@ -121,6 +122,7 @@ Optional, in the profile's `cordis.patch.yml` (`~/.dsh/profiles/web/cordis.patch
 ## Security
 
 - All three routes reject untrusted hosts, cross-site requests and unauthenticated browsers: the Host connection fence returns **401/403** before any handler runs. Only same-origin, signed-cookie requests can trigger an install.
+- The fence is the **only** admission path: if the `connection` service (or its `requestRejection`) is missing, the routes **fail closed with 503** and a one-time warning is logged when the first such request is refused. There is deliberately no weaker local fallback, so a local process without the browser cookie cannot start an install on a shared machine.
 - The installed package name comes from the plugin config (default `@deepseek-ai/dsh`); no user input is interpolated into a shell string — npm runs as an argument array, and the restart helper is a generated file with shell-quoted constants.
 - No credentials are read: the restart keeps the existing browser-session cookie secret (`$DSH_HOME/.credentials.yaml`) untouched, so open pages stay authenticated.
 

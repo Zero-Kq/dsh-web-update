@@ -15,7 +15,9 @@
  * The browser half talks to this half over exact HTTP routes under
  * `/dsh-web-update/`; every route passes the Host connection's browser-trust
  * fence (origin/host admission plus the signed browser cookie), so an
- * unauthenticated or cross-origin request can never install a package.
+ * unauthenticated or cross-origin request can never install a package. Without
+ * that fence the routes fail closed with 503 — there is intentionally no weaker
+ * local fallback, because an install is a privileged action.
  */
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
 import os from 'node:os'
@@ -113,42 +115,41 @@ function sendText(res, status, value) {
 }
 
 /**
+ * Status returned when the Host connection trust fence is unavailable.
+ * The update surface fails closed: no fence means no admission path.
+ */
+export const FENCE_UNAVAILABLE = 503
+
+/**
  * Decide whether this HTTP request may touch the update surface.
  *
- * The Host connection fence already knows the trusted authorities and the
- * signed browser cookie, so it is the authority when present. Without it (an
- * older composition), the plugin keeps its own loopback + same-origin check.
+ * The Host connection service owns browser trust: it validates the request's
+ * authority/origin and the signed browser-session cookie. That fence is the
+ * only admission path for these routes. When the service (or its
+ * `requestRejection`) is missing, the routes fail closed with 503 instead of
+ * falling back to a weaker local check — otherwise any local process without
+ * the browser cookie could start an `npm install` on a shared machine.
+ *
+ * @param {{ get: (name: string) => unknown }} ctx plugin context carrying the optional `connection` service
+ * @param {unknown} req incoming HTTP request forwarded to the fence
+ * @returns {number|undefined} rejection status, or undefined when the fence admits the request
  */
-function rejectionFor(ctx, req) {
-  const connection = ctx.get('connection')
-  if (connection !== undefined && typeof connection.requestRejection === 'function') {
-    try {
-      const code = connection.requestRejection(req)
-      return code === undefined || code === null || code === false ? undefined : code
-    } catch {
-      return 403
-    }
-  }
-  const headers = req?.headers ?? {}
-  let hostUrl
+export function rejectionFor(ctx, req) {
+  let connection
   try {
-    hostUrl = new URL(`http://${String(headers.host ?? '')}`)
+    connection = ctx.get('connection')
+  } catch {
+    return FENCE_UNAVAILABLE
+  }
+  if (connection === undefined || connection === null || typeof connection.requestRejection !== 'function') {
+    return FENCE_UNAVAILABLE
+  }
+  try {
+    const code = connection.requestRejection(req)
+    return code === undefined || code === null || code === false ? undefined : code
   } catch {
     return 403
   }
-  const hostname = hostUrl.hostname.replace(/^\[/u, '').replace(/\]$/u, '')
-  const loopback = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '::1' || /^127(?:\.\d{1,3}){3}$/u.test(hostname)
-  if (!loopback) return 403
-  if (String(headers['sec-fetch-site'] ?? '').toLowerCase() === 'cross-site') return 403
-  const origin = headers.origin
-  if (typeof origin === 'string' && origin !== '' && origin !== 'null') {
-    try {
-      if (new URL(origin).host.toLowerCase() !== String(headers.host ?? '').toLowerCase()) return 403
-    } catch {
-      return 403
-    }
-  }
-  return undefined
 }
 
 /**
@@ -167,6 +168,19 @@ export function apply(ctx, rawConfig) {
     mkdirSync(stateDir, { recursive: true })
   } catch (error) {
     console.warn(`[dsh-web-update] cannot create the state directory ${stateDir}: ${safeMessage(error)}`)
+  }
+
+  // The `connection` service can mount after this plugin's apply() runs, so the
+  // missing-fence diagnostic is deferred: it fires once, on the first request
+  // that is actually refused with FENCE_UNAVAILABLE (never at activation, which
+  // would warn on every healthy start).
+  let fenceWarned = false
+  const warnFenceMissing = () => {
+    if (fenceWarned) return
+    fenceWarned = true
+    console.warn(
+      '[dsh-web-update] the Host connection trust fence is unavailable; /dsh-web-update/* fails closed with HTTP 503 and updates cannot be started. Boot this profile as `dsh web` with the Connection service enabled.',
+    )
   }
 
   const state = {
@@ -400,7 +414,7 @@ export function apply(ctx, rawConfig) {
       kind: 'exact',
       path: `${ROUTE_PREFIX}/state`,
       handler: (req, res) => {
-        if (!guarded(ctx, req, res)) return
+        if (!guarded(ctx, req, res, warnFenceMissing)) return
         if (req.method === 'GET') {
           sendJson(res, 200, snapshot())
           return
@@ -412,7 +426,7 @@ export function apply(ctx, rawConfig) {
       kind: 'exact',
       path: `${ROUTE_PREFIX}/check`,
       handler: async (req, res) => {
-        if (!guarded(ctx, req, res)) return
+        if (!guarded(ctx, req, res, warnFenceMissing)) return
         if (req.method !== 'POST') {
           sendJson(res, 405, { ok: false, error: 'POST only' })
           return
@@ -425,7 +439,7 @@ export function apply(ctx, rawConfig) {
       kind: 'exact',
       path: `${ROUTE_PREFIX}/update`,
       handler: async (req, res) => {
-        if (!guarded(ctx, req, res)) return
+        if (!guarded(ctx, req, res, warnFenceMissing)) return
         if (req.method !== 'POST') {
           sendJson(res, 405, { ok: false, error: 'POST only' })
           return
@@ -481,10 +495,22 @@ export function apply(ctx, rawConfig) {
   }
 }
 
-/** Reject one request through the connection fence; send the refusal itself. */
-function guarded(ctx, req, res) {
+/**
+ * Reject one request through the connection fence; send the refusal itself.
+ * @param {unknown} ctx plugin context
+ * @param {unknown} req incoming request
+ * @param {{ writeHead: Function, end: Function, writableEnded?: boolean }} res response to answer
+ * @param {() => void} [onFenceMissing] called once when the fence itself is unavailable
+ * @returns {boolean} true when the request may continue to the handler
+ */
+function guarded(ctx, req, res, onFenceMissing) {
   const code = rejectionFor(ctx, req)
   if (code === undefined) return true
-  sendText(res, typeof code === 'number' ? code : 403, 'dsh-web-update: request rejected\n')
+  const status = typeof code === 'number' ? code : 403
+  if (status === FENCE_UNAVAILABLE) onFenceMissing?.()
+  const message = status === FENCE_UNAVAILABLE
+    ? 'dsh-web-update: rejected because the Host connection trust fence is unavailable; serve this page from a dsh web host with Connection enabled\n'
+    : 'dsh-web-update: request rejected\n'
+  sendText(res, status, message)
   return false
 }

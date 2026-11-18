@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-update",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "One-click update for dsh web on Linux: checks npm for a newer @deepseek-ai/dsh, shows a light-green badge beside the account row, installs it and auto-restarts dsh web.",
   "type": "module",
   "license": "MIT",
